@@ -1,0 +1,650 @@
+Total: 55.65s
+ROUTINE ======================== main.calculatePasshash in /home/isucon/private_isu/webapp/golang/app.go
+         0      220ms (flat, cum)   0.4% of Total
+         .          .    138:func calculateSalt(accountName string) string {
+         .          .    139:	return digest(accountName)
+         .          .    140:}
+         .          .    141:
+         .          .    142:func calculatePasshash(accountName, password string) string {
+         .      220ms    143:	return digest(password + ":" + calculateSalt(accountName))
+         .          .    144:}
+         .          .    145:
+         .          .    146:func getSession(r *http.Request) *sessions.Session {
+         .          .    147:	session, _ := store.Get(r, "isuconp-go.session")
+         .          .    148:
+ROUTINE ======================== main.calculateSalt in /home/isucon/private_isu/webapp/golang/app.go
+         0      110ms (flat, cum)   0.2% of Total
+         .          .    134:
+         .          .    135:	return strings.TrimSuffix(string(out), "\n")
+         .          .    136:}
+         .          .    137:
+         .          .    138:func calculateSalt(accountName string) string {
+         .      110ms    139:	return digest(accountName)
+         .          .    140:}
+         .          .    141:
+         .          .    142:func calculatePasshash(accountName, password string) string {
+         .          .    143:	return digest(password + ":" + calculateSalt(accountName))
+         .          .    144:}
+ROUTINE ======================== main.digest in /home/isucon/private_isu/webapp/golang/app.go
+         0      220ms (flat, cum)   0.4% of Total
+         .          .    124:	return "'" + strings.Replace(arg, "'", "'\\''", -1) + "'"
+         .          .    125:}
+         .          .    126:
+         .          .    127:func digest(src string) string {
+         .          .    128:	// opensslのバージョンによっては (stdin)= というのがつくので取る
+         .      220ms    129:	out, err := exec.Command("/bin/bash", "-c", `printf "%s" `+escapeshellarg(src)+` | openssl dgst -sha512 | sed 's/^.*= //'`).Output()
+         .          .    130:	if err != nil {
+         .          .    131:		fmt.Println(err)
+         .          .    132:		return ""
+         .          .    133:	}
+         .          .    134:
+ROUTINE ======================== main.getAccountName in /home/isucon/private_isu/webapp/golang/app.go
+      10ms      1.50s (flat, cum)  2.70% of Total
+         .          .    423:	}{posts, me, getCSRFToken(r), getFlash(w, r, "notice")})
+         .          .    424:}
+         .          .    425:
+         .          .    426:func getAccountName(c web.C, w http.ResponseWriter, r *http.Request) {
+         .          .    427:	user := User{}
+         .       20ms    428:	uerr := db.Get(&user, "SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0", c.URLParams["accountName"])
+         .          .    429:
+         .          .    430:	if uerr != nil {
+         .          .    431:		fmt.Println(uerr)
+         .          .    432:		return
+         .          .    433:	}
+         .          .    434:
+         .          .    435:	if user.ID == 0 {
+         .          .    436:		w.WriteHeader(http.StatusNotFound)
+         .          .    437:		return
+         .          .    438:	}
+         .          .    439:
+         .          .    440:	results := []Post{}
+         .          .    441:
+         .       20ms    442:	rerr := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC", user.ID)
+         .          .    443:	if rerr != nil {
+         .          .    444:		fmt.Println(rerr)
+         .          .    445:		return
+         .          .    446:	}
+         .          .    447:
+      10ms      1.04s    448:	posts, merr := makePosts(results, getCSRFToken(r), false)
+         .          .    449:	if merr != nil {
+         .          .    450:		fmt.Println(merr)
+         .          .    451:		return
+         .          .    452:	}
+         .          .    453:
+         .          .    454:	commentCount := 0
+         .       20ms    455:	cerr := db.Get(&commentCount, "SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?", user.ID)
+         .          .    456:	if cerr != nil {
+         .          .    457:		fmt.Println(cerr)
+         .          .    458:		return
+         .          .    459:	}
+         .          .    460:
+         .          .    461:	postIDs := []int{}
+         .       50ms    462:	perr := db.Select(&postIDs, "SELECT `id` FROM `posts` WHERE `user_id` = ?", user.ID)
+         .          .    463:	if perr != nil {
+         .          .    464:		fmt.Println(perr)
+         .          .    465:		return
+         .          .    466:	}
+         .          .    467:	postCount := len(postIDs)
+         .          .    468:
+         .          .    469:	commentedCount := 0
+         .          .    470:	if postCount > 0 {
+         .          .    471:		s := []string{}
+         .          .    472:		for range postIDs {
+         .          .    473:			s = append(s, "?")
+         .          .    474:		}
+         .          .    475:		placeholder := strings.Join(s, ", ")
+         .          .    476:
+         .          .    477:		// convert []int -> []interface{}
+         .          .    478:		args := make([]interface{}, len(postIDs))
+         .          .    479:		for i, v := range postIDs {
+         .          .    480:			args[i] = v
+         .          .    481:		}
+         .          .    482:
+         .       20ms    483:		ccerr := db.Get(&commentedCount, "SELECT COUNT(*) AS count FROM `comments` WHERE `post_id` IN ("+placeholder+")", args...)
+         .          .    484:		if ccerr != nil {
+         .          .    485:			fmt.Println(ccerr)
+         .          .    486:			return
+         .          .    487:		}
+         .          .    488:	}
+         .          .    489:
+         .          .    490:	me := getSessionUser(r)
+         .          .    491:
+         .          .    492:	fmap := template.FuncMap{
+         .          .    493:		"imageURL": imageURL,
+         .          .    494:	}
+         .          .    495:
+         .          .    496:	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
+         .          .    497:		getTemplPath("layout.html"),
+         .          .    498:		getTemplPath("user.html"),
+         .          .    499:		getTemplPath("posts.html"),
+         .          .    500:		getTemplPath("post.html"),
+         .       40ms    501:	)).Execute(w, struct {
+         .          .    502:		Posts          []Post
+         .          .    503:		User           User
+         .          .    504:		PostCount      int
+         .          .    505:		CommentCount   int
+         .          .    506:		CommentedCount int
+         .          .    507:		Me             User
+         .      290ms    508:	}{posts, user, postCount, commentCount, commentedCount, me})
+         .          .    509:}
+         .          .    510:
+         .          .    511:func getPosts(w http.ResponseWriter, r *http.Request) {
+         .          .    512:	m, parseErr := url.ParseQuery(r.URL.RawQuery)
+         .          .    513:	if parseErr != nil {
+ROUTINE ======================== main.getAdminBanned in /home/isucon/private_isu/webapp/golang/app.go
+         0       10ms (flat, cum) 0.018% of Total
+         .          .    737:		http.Redirect(w, r, "/", http.StatusFound)
+         .          .    738:		return
+         .          .    739:	}
+         .          .    740:
+         .          .    741:	if me.Authority == 0 {
+         .       10ms    742:		w.WriteHeader(http.StatusForbidden)
+         .          .    743:		return
+         .          .    744:	}
+         .          .    745:
+         .          .    746:	users := []User{}
+         .          .    747:	err := db.Select(&users, "SELECT * FROM `users` WHERE `authority` = 0 AND `del_flg` = 0 ORDER BY `created_at` DESC")
+ROUTINE ======================== main.getCSRFToken in /home/isucon/private_isu/webapp/golang/app.go
+         0      120ms (flat, cum)  0.22% of Total
+         .          .    246:func isLogin(u User) bool {
+         .          .    247:	return u.ID != 0
+         .          .    248:}
+         .          .    249:
+         .          .    250:func getCSRFToken(r *http.Request) string {
+         .      120ms    251:	session := getSession(r)
+         .          .    252:	csrfToken, ok := session.Values["csrf_token"]
+         .          .    253:	if !ok {
+         .          .    254:		return ""
+         .          .    255:	}
+         .          .    256:	return csrfToken.(string)
+ROUTINE ======================== main.getImage in /home/isucon/private_isu/webapp/golang/app.go
+         0      3.80s (flat, cum)  6.83% of Total
+         .          .    683:		w.WriteHeader(http.StatusNotFound)
+         .          .    684:		return
+         .          .    685:	}
+         .          .    686:
+         .          .    687:	post := Post{}
+         .      3.19s    688:	derr := db.Get(&post, "SELECT * FROM `posts` WHERE `id` = ?", pid)
+         .          .    689:	if derr != nil {
+         .          .    690:		fmt.Println(derr.Error())
+         .          .    691:		return
+         .          .    692:	}
+         .          .    693:
+         .          .    694:	ext := c.URLParams["ext"]
+         .          .    695:
+         .          .    696:	if ext == "jpg" && post.Mime == "image/jpeg" ||
+         .          .    697:		ext == "png" && post.Mime == "image/png" ||
+         .          .    698:		ext == "gif" && post.Mime == "image/gif" {
+         .       20ms    699:		w.Header().Set("Content-Type", post.Mime)
+         .      590ms    700:		_, err := w.Write(post.Imgdata)
+         .          .    701:		if err != nil {
+         .          .    702:			fmt.Println(err.Error())
+         .          .    703:		}
+         .          .    704:		return
+         .          .    705:	}
+ROUTINE ======================== main.getIndex in /home/isucon/private_isu/webapp/golang/app.go
+         0     36.59s (flat, cum) 65.75% of Total
+         .          .    388:
+         .          .    389:	http.Redirect(w, r, "/", http.StatusFound)
+         .          .    390:}
+         .          .    391:
+         .          .    392:func getIndex(w http.ResponseWriter, r *http.Request) {
+         .      130ms    393:	me := getSessionUser(r)
+         .          .    394:
+         .          .    395:	results := []Post{}
+         .          .    396:
+         .     32.37s    397:	err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
+         .          .    398:	if err != nil {
+         .          .    399:		fmt.Println(err)
+         .          .    400:		return
+         .          .    401:	}
+         .          .    402:
+         .      2.45s    403:	posts, merr := makePosts(results, getCSRFToken(r), false)
+         .          .    404:	if merr != nil {
+         .          .    405:		fmt.Println(merr)
+         .          .    406:		return
+         .          .    407:	}
+         .          .    408:
+         .          .    409:	fmap := template.FuncMap{
+         .          .    410:		"imageURL": imageURL,
+         .          .    411:	}
+         .          .    412:
+         .       10ms    413:	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
+         .       10ms    414:		getTemplPath("layout.html"),
+         .          .    415:		getTemplPath("index.html"),
+         .          .    416:		getTemplPath("posts.html"),
+         .          .    417:		getTemplPath("post.html"),
+         .      210ms    418:	)).Execute(w, struct {
+         .          .    419:		Posts     []Post
+         .          .    420:		Me        User
+         .          .    421:		CSRFToken string
+         .          .    422:		Flash     string
+         .      1.41s    423:	}{posts, me, getCSRFToken(r), getFlash(w, r, "notice")})
+         .          .    424:}
+         .          .    425:
+         .          .    426:func getAccountName(c web.C, w http.ResponseWriter, r *http.Request) {
+         .          .    427:	user := User{}
+         .          .    428:	uerr := db.Get(&user, "SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0", c.URLParams["accountName"])
+ROUTINE ======================== main.getLogin in /home/isucon/private_isu/webapp/golang/app.go
+         0       30ms (flat, cum) 0.054% of Total
+         .          .    281:		return
+         .          .    282:	}
+         .          .    283:
+         .          .    284:	template.Must(template.ParseFiles(
+         .          .    285:		getTemplPath("layout.html"),
+         .       20ms    286:		getTemplPath("login.html")),
+         .          .    287:	).Execute(w, struct {
+         .          .    288:		Me    User
+         .          .    289:		Flash string
+         .       10ms    290:	}{me, getFlash(w, r, "notice")})
+         .          .    291:}
+         .          .    292:
+         .          .    293:func postLogin(w http.ResponseWriter, r *http.Request) {
+         .          .    294:	if isLogin(getSessionUser(r)) {
+         .          .    295:		http.Redirect(w, r, "/", http.StatusFound)
+ROUTINE ======================== main.getLogout in /home/isucon/private_isu/webapp/golang/app.go
+         0       20ms (flat, cum) 0.036% of Total
+         .          .    379:
+         .          .    380:	http.Redirect(w, r, "/", http.StatusFound)
+         .          .    381:}
+         .          .    382:
+         .          .    383:func getLogout(w http.ResponseWriter, r *http.Request) {
+         .       10ms    384:	session := getSession(r)
+         .          .    385:	delete(session.Values, "user_id")
+         .          .    386:	session.Options = &sessions.Options{MaxAge: -1}
+         .       10ms    387:	session.Save(r, w)
+         .          .    388:
+         .          .    389:	http.Redirect(w, r, "/", http.StatusFound)
+         .          .    390:}
+         .          .    391:
+         .          .    392:func getIndex(w http.ResponseWriter, r *http.Request) {
+ROUTINE ======================== main.getPosts in /home/isucon/private_isu/webapp/golang/app.go
+         0      2.76s (flat, cum)  4.96% of Total
+         .          .    525:		fmt.Println(terr)
+         .          .    526:		return
+         .          .    527:	}
+         .          .    528:
+         .          .    529:	results := []Post{}
+         .      2.17s    530:	rerr := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC", t.Format(ISO8601_FORMAT))
+         .          .    531:	if rerr != nil {
+         .          .    532:		fmt.Println(rerr)
+         .          .    533:		return
+         .          .    534:	}
+         .          .    535:
+         .      430ms    536:	posts, merr := makePosts(results, getCSRFToken(r), false)
+         .          .    537:	if merr != nil {
+         .          .    538:		fmt.Println(merr)
+         .          .    539:		return
+         .          .    540:	}
+         .          .    541:
+         .          .    542:	if len(posts) == 0 {
+         .          .    543:		w.WriteHeader(http.StatusNotFound)
+         .          .    544:		return
+         .          .    545:	}
+         .          .    546:
+         .          .    547:	fmap := template.FuncMap{
+         .          .    548:		"imageURL": imageURL,
+         .          .    549:	}
+         .          .    550:
+         .          .    551:	template.Must(template.New("posts.html").Funcs(fmap).ParseFiles(
+         .          .    552:		getTemplPath("posts.html"),
+         .          .    553:		getTemplPath("post.html"),
+         .      160ms    554:	)).Execute(w, posts)
+         .          .    555:}
+         .          .    556:
+         .          .    557:func getPostsID(c web.C, w http.ResponseWriter, r *http.Request) {
+         .          .    558:	pid, err := strconv.Atoi(c.URLParams["id"])
+         .          .    559:	if err != nil {
+ROUTINE ======================== main.getPostsID in /home/isucon/private_isu/webapp/golang/app.go
+         0      540ms (flat, cum)  0.97% of Total
+         .          .    560:		w.WriteHeader(http.StatusNotFound)
+         .          .    561:		return
+         .          .    562:	}
+         .          .    563:
+         .          .    564:	results := []Post{}
+         .       70ms    565:	rerr := db.Select(&results, "SELECT * FROM `posts` WHERE `id` = ?", pid)
+         .          .    566:	if rerr != nil {
+         .          .    567:		fmt.Println(rerr)
+         .          .    568:		return
+         .          .    569:	}
+         .          .    570:
+         .      190ms    571:	posts, merr := makePosts(results, getCSRFToken(r), true)
+         .          .    572:	if merr != nil {
+         .          .    573:		fmt.Println(merr)
+         .          .    574:		return
+         .          .    575:	}
+         .          .    576:
+         .          .    577:	if len(posts) == 0 {
+         .          .    578:		w.WriteHeader(http.StatusNotFound)
+         .          .    579:		return
+         .          .    580:	}
+         .          .    581:
+         .          .    582:	p := posts[0]
+         .          .    583:
+         .       20ms    584:	me := getSessionUser(r)
+         .          .    585:
+         .          .    586:	fmap := template.FuncMap{
+         .          .    587:		"imageURL": imageURL,
+         .          .    588:	}
+         .          .    589:
+         .          .    590:	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
+         .          .    591:		getTemplPath("layout.html"),
+         .          .    592:		getTemplPath("post_id.html"),
+         .          .    593:		getTemplPath("post.html"),
+         .       80ms    594:	)).Execute(w, struct {
+         .          .    595:		Post Post
+         .          .    596:		Me   User
+         .      180ms    597:	}{p, me})
+         .          .    598:}
+         .          .    599:
+         .          .    600:func postIndex(w http.ResponseWriter, r *http.Request) {
+         .          .    601:	me := getSessionUser(r)
+         .          .    602:	if !isLogin(me) {
+ROUTINE ======================== main.getSession in /home/isucon/private_isu/webapp/golang/app.go
+         0      230ms (flat, cum)  0.41% of Total
+         .          .    142:func calculatePasshash(accountName, password string) string {
+         .          .    143:	return digest(password + ":" + calculateSalt(accountName))
+         .          .    144:}
+         .          .    145:
+         .          .    146:func getSession(r *http.Request) *sessions.Session {
+         .      230ms    147:	session, _ := store.Get(r, "isuconp-go.session")
+         .          .    148:
+         .          .    149:	return session
+         .          .    150:}
+         .          .    151:
+         .          .    152:func getSessionUser(r *http.Request) User {
+ROUTINE ======================== main.getSessionUser in /home/isucon/private_isu/webapp/golang/app.go
+         0      250ms (flat, cum)  0.45% of Total
+         .          .    148:
+         .          .    149:	return session
+         .          .    150:}
+         .          .    151:
+         .          .    152:func getSessionUser(r *http.Request) User {
+         .      100ms    153:	session := getSession(r)
+         .          .    154:	uid, ok := session.Values["user_id"]
+         .          .    155:	if !ok || uid == nil {
+         .          .    156:		return User{}
+         .          .    157:	}
+         .          .    158:
+         .          .    159:	u := User{}
+         .          .    160:
+         .      150ms    161:	err := db.Get(&u, "SELECT * FROM `users` WHERE `id` = ?", uid)
+         .          .    162:	if err != nil {
+         .          .    163:		return User{}
+         .          .    164:	}
+         .          .    165:
+         .          .    166:	return u
+ROUTINE ======================== main.getTemplPath in /home/isucon/private_isu/webapp/golang/app.go
+         0       10ms (flat, cum) 0.018% of Total
+         .          .    263:	}
+         .          .    264:	return hex.EncodeToString(k)
+         .          .    265:}
+         .          .    266:
+         .          .    267:func getTemplPath(filename string) string {
+         .       10ms    268:	return path.Join("templates", filename)
+         .          .    269:}
+         .          .    270:
+         .          .    271:func getInitialize(w http.ResponseWriter, r *http.Request) {
+         .          .    272:	dbInitialize()
+         .          .    273:	w.WriteHeader(http.StatusOK)
+ROUTINE ======================== main.imageURL in /home/isucon/private_isu/webapp/golang/app.go
+         0       10ms (flat, cum) 0.018% of Total
+         .          .    238:		ext = ".png"
+         .          .    239:	} else if p.Mime == "image/gif" {
+         .          .    240:		ext = ".gif"
+         .          .    241:	}
+         .          .    242:
+         .       10ms    243:	return "/image/" + strconv.Itoa(p.ID) + ext
+         .          .    244:}
+         .          .    245:
+         .          .    246:func isLogin(u User) bool {
+         .          .    247:	return u.ID != 0
+         .          .    248:}
+ROUTINE ======================== main.main in /home/isucon/private_isu/webapp/golang/app.go
+         0      380ms (flat, cum)  0.68% of Total
+         .          .    843:	goji.Get("/image/:id.:ext", getImage)
+         .          .    844:	goji.Post("/comment", postComment)
+         .          .    845:	goji.Get("/admin/banned", getAdminBanned)
+         .          .    846:	goji.Post("/admin/banned", postAdminBanned)
+         .          .    847:	goji.Get("/*", http.FileServer(http.Dir("../public")))
+         .      380ms    848:	goji.Serve()
+         .          .    849:}
+ROUTINE ======================== main.makePosts in /home/isucon/private_isu/webapp/golang/app.go
+         0      3.98s (flat, cum)  7.15% of Total
+         .          .    181:
+         .          .    182:func makePosts(results []Post, CSRFToken string, allComments bool) ([]Post, error) {
+         .          .    183:	var posts []Post
+         .          .    184:
+         .          .    185:	for _, p := range results {
+         .      820ms    186:		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+         .          .    187:		if err != nil {
+         .          .    188:			return nil, err
+         .          .    189:		}
+         .          .    190:
+         .          .    191:		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+         .          .    192:		if !allComments {
+         .       30ms    193:			query += " LIMIT 3"
+         .          .    194:		}
+         .          .    195:		var comments []Comment
+         .      900ms    196:		cerr := db.Select(&comments, query, p.ID)
+         .          .    197:		if cerr != nil {
+         .          .    198:			return nil, cerr
+         .          .    199:		}
+         .          .    200:
+         .          .    201:		for i := 0; i < len(comments); i++ {
+         .      1.17s    202:			uerr := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+         .          .    203:			if uerr != nil {
+         .          .    204:				return nil, uerr
+         .          .    205:			}
+         .          .    206:		}
+         .          .    207:
+         .          .    208:		// reverse
+         .          .    209:		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+         .          .    210:			comments[i], comments[j] = comments[j], comments[i]
+         .          .    211:		}
+         .          .    212:
+         .          .    213:		p.Comments = comments
+         .          .    214:
+         .         1s    215:		perr := db.Get(&p.User, "SELECT * FROM `users` WHERE `id` = ?", p.UserID)
+         .          .    216:		if perr != nil {
+         .          .    217:			return nil, perr
+         .          .    218:		}
+         .          .    219:
+         .          .    220:		p.CSRFToken = CSRFToken
+         .          .    221:
+         .          .    222:		if p.User.DelFlg == 0 {
+         .       60ms    223:			posts = append(posts, p)
+         .          .    224:		}
+         .          .    225:		if len(posts) >= postsPerPage {
+         .          .    226:			break
+         .          .    227:		}
+         .          .    228:	}
+ROUTINE ======================== main.postComment in /home/isucon/private_isu/webapp/golang/app.go
+         0       50ms (flat, cum)  0.09% of Total
+         .          .    706:
+         .          .    707:	w.WriteHeader(http.StatusNotFound)
+         .          .    708:}
+         .          .    709:
+         .          .    710:func postComment(w http.ResponseWriter, r *http.Request) {
+         .       20ms    711:	me := getSessionUser(r)
+         .          .    712:	if !isLogin(me) {
+         .          .    713:		http.Redirect(w, r, "/login", http.StatusFound)
+         .          .    714:		return
+         .          .    715:	}
+         .          .    716:
+         .          .    717:	if r.FormValue("csrf_token") != getCSRFToken(r) {
+         .          .    718:		w.WriteHeader(StatusUnprocessableEntity)
+         .          .    719:		return
+         .          .    720:	}
+         .          .    721:
+         .          .    722:	postID, ierr := strconv.Atoi(r.FormValue("post_id"))
+         .          .    723:	if ierr != nil {
+         .          .    724:		fmt.Println("post_idは整数のみです")
+         .          .    725:		return
+         .          .    726:	}
+         .          .    727:
+         .          .    728:	query := "INSERT INTO `comments` (`post_id`, `user_id`, `comment`) VALUES (?,?,?)"
+         .       30ms    729:	db.Exec(query, postID, me.ID, r.FormValue("comment"))
+         .          .    730:
+         .          .    731:	http.Redirect(w, r, fmt.Sprintf("/posts/%d", postID), http.StatusFound)
+         .          .    732:}
+         .          .    733:
+         .          .    734:func getAdminBanned(w http.ResponseWriter, r *http.Request) {
+ROUTINE ======================== main.postIndex in /home/isucon/private_isu/webapp/golang/app.go
+         0      240ms (flat, cum)  0.43% of Total
+         .          .    596:		Me   User
+         .          .    597:	}{p, me})
+         .          .    598:}
+         .          .    599:
+         .          .    600:func postIndex(w http.ResponseWriter, r *http.Request) {
+         .       80ms    601:	me := getSessionUser(r)
+         .          .    602:	if !isLogin(me) {
+         .          .    603:		http.Redirect(w, r, "/login", http.StatusFound)
+         .          .    604:		return
+         .          .    605:	}
+         .          .    606:
+         .       80ms    607:	if r.FormValue("csrf_token") != getCSRFToken(r) {
+         .          .    608:		w.WriteHeader(StatusUnprocessableEntity)
+         .          .    609:		return
+         .          .    610:	}
+         .          .    611:
+         .          .    612:	file, header, ferr := r.FormFile("file")
+         .          .    613:	if ferr != nil {
+         .          .    614:		session := getSession(r)
+         .          .    615:		session.Values["notice"] = "画像が必須です"
+         .          .    616:		session.Save(r, w)
+         .          .    617:
+         .          .    618:		http.Redirect(w, r, "/", http.StatusFound)
+         .          .    619:		return
+         .          .    620:	}
+         .          .    621:
+         .          .    622:	mime := ""
+         .          .    623:	if file != nil {
+         .          .    624:		// 投稿のContent-Typeからファイルのタイプを決定する
+         .          .    625:		contentType := header.Header["Content-Type"][0]
+         .          .    626:		if strings.Contains(contentType, "jpeg") {
+         .          .    627:			mime = "image/jpeg"
+         .          .    628:		} else if strings.Contains(contentType, "png") {
+         .          .    629:			mime = "image/png"
+         .          .    630:		} else if strings.Contains(contentType, "gif") {
+         .          .    631:			mime = "image/gif"
+         .          .    632:		} else {
+         .          .    633:			session := getSession(r)
+         .          .    634:			session.Values["notice"] = "投稿できる画像形式はjpgとpngとgifだけです"
+         .          .    635:			session.Save(r, w)
+         .          .    636:
+         .          .    637:			http.Redirect(w, r, "/", http.StatusFound)
+         .          .    638:			return
+         .          .    639:		}
+         .          .    640:	}
+         .          .    641:
+         .       30ms    642:	filedata, rerr := ioutil.ReadAll(file)
+         .          .    643:	if rerr != nil {
+         .          .    644:		fmt.Println(rerr.Error())
+         .          .    645:	}
+         .          .    646:
+         .          .    647:	if len(filedata) > UploadLimit {
+         .          .    648:		session := getSession(r)
+         .          .    649:		session.Values["notice"] = "ファイルサイズが大きすぎます"
+         .          .    650:		session.Save(r, w)
+         .          .    651:
+         .          .    652:		http.Redirect(w, r, "/", http.StatusFound)
+         .          .    653:		return
+         .          .    654:	}
+         .          .    655:
+         .          .    656:	query := "INSERT INTO `posts` (`user_id`, `mime`, `imgdata`, `body`) VALUES (?,?,?,?)"
+         .          .    657:	result, eerr := db.Exec(
+         .          .    658:		query,
+         .          .    659:		me.ID,
+         .          .    660:		mime,
+         .          .    661:		filedata,
+         .          .    662:		r.FormValue("body"),
+         .       50ms    663:	)
+         .          .    664:	if eerr != nil {
+         .          .    665:		fmt.Println(eerr.Error())
+         .          .    666:		return
+         .          .    667:	}
+         .          .    668:
+ROUTINE ======================== main.postLogin in /home/isucon/private_isu/webapp/golang/app.go
+         0      360ms (flat, cum)  0.65% of Total
+         .          .    294:	if isLogin(getSessionUser(r)) {
+         .          .    295:		http.Redirect(w, r, "/", http.StatusFound)
+         .          .    296:		return
+         .          .    297:	}
+         .          .    298:
+         .      260ms    299:	u := tryLogin(r.FormValue("account_name"), r.FormValue("password"))
+         .          .    300:
+         .          .    301:	if u != nil {
+         .          .    302:		session := getSession(r)
+         .          .    303:		session.Values["user_id"] = u.ID
+         .          .    304:		session.Values["csrf_token"] = secureRandomStr(16)
+         .       60ms    305:		session.Save(r, w)
+         .          .    306:
+         .       10ms    307:		http.Redirect(w, r, "/", http.StatusFound)
+         .          .    308:	} else {
+         .          .    309:		session := getSession(r)
+         .       10ms    310:		session.Values["notice"] = "アカウント名かパスワードが間違っています"
+         .       20ms    311:		session.Save(r, w)
+         .          .    312:
+         .          .    313:		http.Redirect(w, r, "/login", http.StatusFound)
+         .          .    314:	}
+         .          .    315:}
+         .          .    316:
+ROUTINE ======================== main.postRegister in /home/isucon/private_isu/webapp/golang/app.go
+         0       80ms (flat, cum)  0.14% of Total
+         .          .    359:		http.Redirect(w, r, "/register", http.StatusFound)
+         .          .    360:		return
+         .          .    361:	}
+         .          .    362:
+         .          .    363:	query := "INSERT INTO `users` (`account_name`, `passhash`) VALUES (?,?)"
+         .       70ms    364:	result, eerr := db.Exec(query, accountName, calculatePasshash(accountName, password))
+         .          .    365:	if eerr != nil {
+         .          .    366:		fmt.Println(eerr.Error())
+         .          .    367:		return
+         .          .    368:	}
+         .          .    369:
+         .          .    370:	session := getSession(r)
+         .          .    371:	uid, lerr := result.LastInsertId()
+         .          .    372:	if lerr != nil {
+         .          .    373:		fmt.Println(lerr.Error())
+         .          .    374:		return
+         .          .    375:	}
+         .          .    376:	session.Values["user_id"] = uid
+         .          .    377:	session.Values["csrf_token"] = secureRandomStr(16)
+         .       10ms    378:	session.Save(r, w)
+         .          .    379:
+         .          .    380:	http.Redirect(w, r, "/", http.StatusFound)
+         .          .    381:}
+         .          .    382:
+         .          .    383:func getLogout(w http.ResponseWriter, r *http.Request) {
+ROUTINE ======================== main.tryLogin in /home/isucon/private_isu/webapp/golang/app.go
+         0      250ms (flat, cum)  0.45% of Total
+         .          .     92:	}
+         .          .     93:}
+         .          .     94:
+         .          .     95:func tryLogin(accountName, password string) *User {
+         .          .     96:	u := User{}
+         .       70ms     97:	err := db.Get(&u, "SELECT * FROM users WHERE account_name = ? AND del_flg = 0", accountName)
+         .          .     98:	if err != nil {
+         .          .     99:		return nil
+         .          .    100:	}
+         .          .    101:
+         .      180ms    102:	if &u != nil && calculatePasshash(u.AccountName, password) == u.Passhash {
+         .          .    103:		return &u
+         .          .    104:	} else if &u == nil {
+         .          .    105:		return nil
+         .          .    106:	} else {
+         .          .    107:		return nil
+ROUTINE ======================== runtime.main in /home/isucon/.local/go/src/runtime/proc.go
+         0      380ms (flat, cum)  0.68% of Total
+         .          .    183:	if isarchive || islibrary {
+         .          .    184:		// A program compiled with -buildmode=c-archive or c-shared
+         .          .    185:		// has a main, but it is not executed.
+         .          .    186:		return
+         .          .    187:	}
+         .      380ms    188:	main_main()
+         .          .    189:	if raceenabled {
+         .          .    190:		racefini()
+         .          .    191:	}
+         .          .    192:
+         .          .    193:	// Make racy client program work: if panicking on

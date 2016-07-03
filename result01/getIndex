@@ -1,0 +1,44 @@
+Total: 8.53s
+ROUTINE ======================== main.getIndex in /home/isucon/private_isu/webapp/golang/app.go
+         0      5.78s (flat, cum) 67.76% of Total
+         .          .    388:
+         .          .    389:	http.Redirect(w, r, "/", http.StatusFound)
+         .          .    390:}
+         .          .    391:
+         .          .    392:func getIndex(w http.ResponseWriter, r *http.Request) {
+         .       10ms    393:	me := getSessionUser(r)
+         .          .    394:
+         .          .    395:	results := []Post{}
+         .          .    396:
+         .      5.12s    397:	err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
+         .          .    398:	if err != nil {
+         .          .    399:		fmt.Println(err)
+         .          .    400:		return
+         .          .    401:	}
+         .          .    402:
+         .      400ms    403:	posts, merr := makePosts(results, getCSRFToken(r), false)
+         .          .    404:	if merr != nil {
+         .          .    405:		fmt.Println(merr)
+         .          .    406:		return
+         .          .    407:	}
+         .          .    408:
+         .          .    409:	fmap := template.FuncMap{
+         .          .    410:		"imageURL": imageURL,
+         .          .    411:	}
+         .          .    412:
+         .          .    413:	template.Must(template.New("layout.html").Funcs(fmap).ParseFiles(
+         .          .    414:		getTemplPath("layout.html"),
+         .          .    415:		getTemplPath("index.html"),
+         .          .    416:		getTemplPath("posts.html"),
+         .          .    417:		getTemplPath("post.html"),
+         .       10ms    418:	)).Execute(w, struct {
+         .          .    419:		Posts     []Post
+         .          .    420:		Me        User
+         .          .    421:		CSRFToken string
+         .          .    422:		Flash     string
+         .      240ms    423:	}{posts, me, getCSRFToken(r), getFlash(w, r, "notice")})
+         .          .    424:}
+         .          .    425:
+         .          .    426:func getAccountName(c web.C, w http.ResponseWriter, r *http.Request) {
+         .          .    427:	user := User{}
+         .          .    428:	uerr := db.Get(&user, "SELECT * FROM `users` WHERE `account_name` = ? AND `del_flg` = 0", c.URLParams["accountName"])

@@ -1,0 +1,24 @@
+0.40s of 6.06s total ( 6.60%)
+Dropped 294 nodes (cum <= 0.03s)
+Showing top 20 nodes out of 222 (cum >= 1.57s)
+      flat  flat%   sum%        cum   cum%
+         0     0%     0%      5.92s 97.69%  runtime.goexit
+         0     0%     0%      5.21s 85.97%  net/http.(*conn).serve
+         0     0%     0%      5.15s 84.98%  github.com/zenazn/goji/web.(*Mux).ServeHTTP
+         0     0%     0%      5.15s 84.98%  github.com/zenazn/goji/web.(*cStack).ServeHTTP
+         0     0%     0%      5.15s 84.98%  github.com/zenazn/goji/web/middleware.RequestID.func1
+         0     0%     0%      5.15s 84.98%  net/http.(*ServeMux).ServeHTTP
+         0     0%     0%      5.15s 84.98%  net/http.HandlerFunc.ServeHTTP
+         0     0%     0%      5.15s 84.98%  net/http.serverHandler.ServeHTTP
+         0     0%     0%      5.14s 84.82%  github.com/zenazn/goji/web/middleware.Logger.func1
+         0     0%     0%      5.12s 84.49%  github.com/zenazn/goji/web.(*mStack).newStack.func1
+         0     0%     0%      5.12s 84.49%  github.com/zenazn/goji/web.(*router).route
+         0     0%     0%      5.12s 84.49%  github.com/zenazn/goji/web/middleware.AutomaticOptions.func1
+         0     0%     0%      5.12s 84.49%  github.com/zenazn/goji/web/middleware.Recoverer.func1
+         0     0%     0%      4.54s 74.92%  github.com/zenazn/goji/web.netHTTPHandlerFuncWrap.ServeHTTPC
+         0     0%     0%      4.15s 68.48%  main.getIndex
+         0     0%     0%      3.94s 65.02%  github.com/jmoiron/sqlx.(*DB).Select
+         0     0%     0%      3.94s 65.02%  github.com/jmoiron/sqlx.Select
+     0.02s  0.33%  0.33%      3.84s 63.37%  github.com/jmoiron/sqlx.scanAll
+     0.38s  6.27%  6.60%      1.72s 28.38%  runtime.mallocgc
+         0     0%  6.60%      1.57s 25.91%  database/sql.(*Rows).Next
